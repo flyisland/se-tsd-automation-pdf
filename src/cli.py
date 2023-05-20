@@ -49,8 +49,13 @@ htmlBody = """<div><h2>Summary</h2><ac:structured-macro ac:name="details" ac:sch
     help="Perform the automation on all pages",
 )
 def main(**kwargs):
-    # TODO:
-    confluence.export_page(kwargs.get("page_id"), kwargs)
+    confluence.init(kwargs)
+    if kwargs.get("all"):
+        confluence.export_all(kwargs)
+    elif kwargs.get("page_id"):
+        confluence.export_page(kwargs.get("page_id"), kwargs)
+    else:
+        click.echo("Please provide a page id")
 
 
 if __name__ == "__main__":

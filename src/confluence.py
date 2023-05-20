@@ -1,6 +1,7 @@
 import logging
 from atlassian import Confluence
 from bs4 import BeautifulSoup
+import urllib.parse
 
 logging.basicConfig(level=logging.INFO)
 confluence = None
@@ -20,11 +21,30 @@ def init(opts):
         logging.info("Connected to Confluence " + confluence.url)
 
 
-def export_page(page_id, opts):
+def export_all(opts):
+    all_pages = fetch_all_pages(opts)
+    for page in all_pages:
+        export_page(page.get("id"))
+
+
+def fetch_all_pages(opts):
+    result = []
+    cql = f'space={opts["space"]} and type=page and (label="se-opportunity" or label="se-tsd")'
+    cql = urllib.parse.quote(cql)
+    nextPath = f"/rest/api/content/search?cql={cql}&limit=50"
+    while nextPath:
+        logging.info(f"Fetching {nextPath}")
+        response = confluence.get(nextPath)
+        result.extend(response.get("results"))
+        nextPath = response.get("_links").get("next")
+
+    return result
+
+
+def export_page(page_id):
     """Export a page to a pdf"""
-    init(opts)
     page = confluence.get_page_by_id(page_id, expand="body.storage")
-    print(f"L: {page['_links']['base']+page['_links']['webui']}")
+    print(f"P: {page['_links']['base']+page['_links']['webui']}")
     hub_folder_url = get_hub_account_folder(page["body"]["storage"]["value"])
     if hub_folder_url:
         print(f"F: {hub_folder_url}")
