@@ -51,3 +51,48 @@ def get_item_id_by_path(page: model.Page) -> None:
         return None
     page.tsd_folder_id = respJson.get("id")
     page.tsd_folder_url = respJson.get("webUrl")
+
+
+def upload_file(page: model.Page, data: bytes) -> None:
+    """
+    Upload a file to SharePoint folder.
+    """
+    logging.info(f"Uploading {page.tsd_file_name()} to {page.tsd_folder_url}")
+    item_path = urllib.parse.quote(page.tsd_folder_name + "/" + page.tsd_file_name())
+    url = f"/sites/{site_id}/drive/root:/{item_path}:/createUploadSession"
+    full_url = graph_url + url
+    requestBody = {
+        "item": {
+            "@microsoft.graph.conflictBehavior": "replace",
+            # "description": f"This PDF is exported from {page.confluence_url}",
+        },
+    }
+    response = session.post(
+        full_url,
+        headers={"Content-Type": "application/json"},
+        data=json.dumps(requestBody),
+    ).json()
+    logging.debug(f"POST {full_url}\n{json.dumps(response, indent=2)}")
+
+    upload_url = response.get("uploadUrl")
+    data_len = len(data)
+    index_start = 0
+    index_end = 0
+    while index_end < data_len:
+        index_end = index_start + 1024 * 1000
+        if index_end > data_len:
+            index_end = data_len
+        chunk = data[index_start:index_end]
+        headers = {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": str(len(chunk)),
+            "Content-Range": f"bytes {index_start}-{index_end-1}/{data_len}",
+        }
+
+        response = session.put(
+            upload_url,
+            headers=headers,
+            data=chunk,
+        )
+        logging.debug(f"PUT {upload_url}\n{json.dumps(response.json(), indent=2)}")
+        index_start = index_end

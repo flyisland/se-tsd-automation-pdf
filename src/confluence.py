@@ -20,7 +20,6 @@ def init(opts):
             cloud=True,
             api_version="cloud",
         )
-        logging.info("Connected to Confluence " + confluence.url)
 
 
 def export_all(opts):
@@ -59,6 +58,8 @@ def export_page(page_id):
     page.tsd_folder_name = url_to_tsd_path(hub_folder_url)
     graph.get_item_id_by_path(page)
     print(page)
+    pdf_data = confluence.export_page(page.confluence_id)
+    graph.upload_file(page, pdf_data)
 
 
 def get_hub_account_folder(htmlBody):
