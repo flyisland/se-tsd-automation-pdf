@@ -44,22 +44,37 @@ def fetch_all_pages(opts):
 
 def export_page(page_id):
     """Export a page to a pdf"""
-    pageJson = confluence.get_page_by_id(page_id, expand="body.storage")
+    pageJson = confluence.get_page_by_id(
+        page_id, expand="body.storage,history.lastUpdated"
+    )
     page = model.Page(
-        confluence_id=page_id,
-        confluence_url=pageJson["_links"]["base"] + pageJson["_links"]["webui"],
+        page_id=page_id,
+        page_url=pageJson["_links"]["base"] + pageJson["_links"]["webui"],
         title=pageJson["title"],
+        page_lastUpdated=pageJson["history"]["lastUpdated"]["when"],
         bodyXml=pageJson["body"]["storage"]["value"],
     )
+    logging.info(f"Checking page {page.page_url}")
     hub_folder_url = get_hub_account_folder(page.bodyXml)
     if not hub_folder_url:
         logging.error(f"No hub account folder found for {page}")
         return
-    page.tsd_folder_name = url_to_tsd_path(hub_folder_url)
+    page.tsd_folder_path = url_to_tsd_path(hub_folder_url)
     graph.get_item_id_by_path(page)
-    print(page)
-    pdf_data = confluence.export_page(page.confluence_id)
+    logging.debug(page)
+    if (
+        page.tsd_pdf_lastModifiedDateTime
+        and page.tsd_pdf_lastModifiedDateTime > page.page_lastUpdated
+    ):
+        logging.warning(
+            f"This page has already been uploaded to the folder {page.tsd_folder_url}"
+        )
+        return
+    pdf_data = confluence.export_page(page.page_id)
     graph.upload_file(page, pdf_data)
+    logging.info(
+        f"This page has been successfully uploaded to the folder {page.tsd_folder_url}"
+    )
 
 
 def get_hub_account_folder(htmlBody):

@@ -39,7 +39,7 @@ def get_item_id_by_path(page: model.Page) -> None:
     """
     Get the id of an item by path, make sure it's a folder.
     """
-    url = f"/sites/{site_id}/drive/root:/{urllib.parse.quote(page.tsd_folder_name)}"
+    url = f"/sites/{site_id}/drive/root:/{urllib.parse.quote(page.tsd_folder_path)}"
     full_url = graph_url + url
     response = session.get(full_url)
     if response.status_code != 200:
@@ -49,8 +49,14 @@ def get_item_id_by_path(page: model.Page) -> None:
     if "folder" not in respJson:
         logging.error(f"{full_url} is NOT a folder\n{json.dumps(respJson, indent=2)}")
         return None
-    page.tsd_folder_id = respJson.get("id")
     page.tsd_folder_url = respJson.get("webUrl")
+    page.tsd_pdf_path = page.tsd_folder_path + "/" + page.tsd_file_name()
+
+    url = f"/sites/{site_id}/drive/root:/{urllib.parse.quote(page.tsd_pdf_path)}"
+    full_url = graph_url + url
+    response = session.get(full_url)
+    respJson = response.json()
+    page.tsd_pdf_lastModifiedDateTime = respJson.get("lastModifiedDateTime")
 
 
 def upload_file(page: model.Page, data: bytes) -> None:
@@ -58,7 +64,7 @@ def upload_file(page: model.Page, data: bytes) -> None:
     Upload a file to SharePoint folder.
     """
     logging.info(f"Uploading {page.tsd_file_name()} to {page.tsd_folder_url}")
-    item_path = urllib.parse.quote(page.tsd_folder_name + "/" + page.tsd_file_name())
+    item_path = urllib.parse.quote(page.tsd_pdf_path)
     url = f"/sites/{site_id}/drive/root:/{item_path}:/createUploadSession"
     full_url = graph_url + url
     requestBody = {
