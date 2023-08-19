@@ -1,0 +1,39 @@
+service: se-tsd-automation
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: "us-east-1"
+
+constructs:
+  jobs:
+    type: queue
+    worker:
+      handler: handler.consumer
+      alarm: island.chen@solace.com
+      timeout: 120
+      environment:
+        FORGE_EMAIL: ${env:FORGE_EMAIL, param:forge-email}
+        FORGE_API_TOKEN: ${env:FORGE_API_TOKEN, param:forge-api-token}
+        AZURE_CLIENT_ID: ${env:AZURE_CLIENT_ID, param:azure-client-id}
+        AZURE_TENANT_ID: ${env:AZURE_TENANT_ID, param:azure-tenant-id}
+        AZURE_CLIENT_SECRET: ${env:AZURE_CLIENT_SECRET, param:azure-client-secret}
+
+functions:
+  producer:
+    handler: handler.producer
+    events:
+      - httpApi:
+          method: post
+          path: /produce
+    environment:
+      QUEUE_URL: ${construct:jobs.queueUrl}
+
+plugins:
+  - serverless-lift
+  - serverless-python-requirements
+
+package:
+  patterns:
+    - "!node_modules/**"
