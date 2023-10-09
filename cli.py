@@ -3,10 +3,6 @@ import confluence
 import graph
 import logging
 
-logging.basicConfig(
-    format="%(asctime)s, %(levelname)s, %(module)s, %(message)s", level=logging.INFO
-)
-
 
 @click.command(context_settings={"show_default": True})
 @click.option(
@@ -52,7 +48,14 @@ logging.basicConfig(
     is_flag=True,
     help="Perform the automation on all pages",
 )
+@click.option("--debug", help="Enable debug logging", is_flag=True)
 def main(**kwargs):
+    logging.basicConfig(
+        format="%(asctime)s, %(levelname)s, %(module)s, %(message)s",
+        level=logging.DEBUG if kwargs.get("debug") else logging.INFO,
+    )
+
+    logging.debug(kwargs)
     confluence.init(kwargs)
     graph.init(kwargs)
     if kwargs.get("all"):
