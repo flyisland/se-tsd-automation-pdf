@@ -2,15 +2,18 @@ import logging
 from atlassian import Confluence
 from bs4 import BeautifulSoup
 import urllib.parse
+import re
 
 import graph
 import model
 
 confluence = None
+dry_run = False
 
 
 def init(opts):
     global confluence
+    global dry_run
     if confluence is None:
         domain = opts["domain"]
         confluence = Confluence(
@@ -20,6 +23,8 @@ def init(opts):
             cloud=True,
             api_version="cloud",
         )
+    if opts.get("dry_run"):
+        dry_run = True
 
 
 def export_all(opts):
@@ -42,6 +47,73 @@ def fetch_all_pages(opts):
     return result
 
 
+def analyze_page(page_id: str):
+    has_good_folder_url = "X"
+    has_good_account_id = "X"
+    pageJson = confluence.get_page_by_id(
+        page_id, expand="body.storage,history.lastUpdated"
+    )
+    page = model.Page(
+        page_id=page_id,
+        page_url=pageJson["_links"]["base"] + pageJson["_links"]["webui"],
+        title=pageJson["title"],
+        page_lastUpdated=pageJson["history"]["lastUpdated"]["when"],
+        bodyXml=pageJson["body"]["storage"]["value"],
+    )
+
+    try:
+        if hub_folder_url := __get_account_folder_by_details(page.bodyXml):
+            logging.debug(f"hub_folder_url: {hub_folder_url}")
+            if tsd_folder_path := url_to_tsd_path(hub_folder_url):
+                page.tsd_folder_path = tsd_folder_path
+                logging.debug(f"page.tsd_folder_path: {page.tsd_folder_path}")
+                graph.setup_tsd_info(page)
+                logging.debug(f"page.tsd_folder_url: {page.tsd_folder_url}")
+                if page.tsd_folder_url:
+                    has_good_folder_url = "Y"
+
+        account_id = __get_account_id(page.bodyXml)
+        logging.debug(f"account_id: {account_id}")
+        if account_id:
+            account_folder = graph.get_account_folder_by_id(account_id)
+            logging.debug(f"account_folder: {account_folder}")
+            if tsd_folder_path := url_to_tsd_path(account_folder):
+                page.tsd_folder_path = tsd_folder_path
+                logging.debug(f"page.tsd_folder_path: {page.tsd_folder_path}")
+                graph.setup_tsd_info(page)
+                logging.debug(f"page.tsd_folder_url: {page.tsd_folder_url}")
+                if page.tsd_folder_url:
+                    has_good_account_id = "Y"
+    except Exception as e:
+        logging.error(f"Error analyzing page {page.page_url}: {e}")
+    print(
+        f"{page.page_id}, {has_good_folder_url}, {has_good_account_id}, {page.page_url}"
+    )
+
+    pass
+
+
+def __get_account_folder_by_id(bodyXml):
+    account_id = __get_account_id(bodyXml)
+    account_folder = graph.get_account_folder_by_id(account_id)
+    return account_folder
+
+
+def __set_up_tsd_folder_path(page) -> bool:
+    for get_method in [
+        __get_account_folder_by_id,  # Get the Account Folder by Account ID first
+        __get_account_folder_by_details,
+    ]:
+        account_folder = get_method(page.bodyXml)
+        if not account_folder:
+            continue
+        page.tsd_folder_path = url_to_tsd_path(account_folder)
+        graph.setup_tsd_info(page)
+        if page.tsd_folder_url:
+            return True
+    return False
+
+
 def export_page(page_id):
     """Export a page to a pdf"""
     pageJson = confluence.get_page_by_id(
@@ -54,21 +126,22 @@ def export_page(page_id):
         page_lastUpdated=pageJson["history"]["lastUpdated"]["when"],
         bodyXml=pageJson["body"]["storage"]["value"],
     )
-    logging.info(f"Checking page {page.page_url}")
-    hub_folder_url = get_hub_account_folder(page.bodyXml)
-    if not hub_folder_url:
-        logging.error(f"No hub account folder found for {page}")
+    logging.info(f"Checking page {page.page_url} ...")
+    if not __set_up_tsd_folder_path(page):
+        logging.warning(f"Cannot find the TSD folder for this page {page.page_url}")
         return
-    page.tsd_folder_path = url_to_tsd_path(hub_folder_url)
-    graph.get_item_id_by_path(page)
     logging.debug(page)
     if (
         page.tsd_pdf_lastModifiedDateTime
         and page.tsd_pdf_lastModifiedDateTime > page.page_lastUpdated
     ):
-        logging.warning(
+        logging.info(
             f"This page has already been uploaded to the folder {page.tsd_folder_url}"
         )
+        return
+    logging.info(f"Exporting page {page.page_url} to the TSD folder ...")
+    if dry_run:
+        logging.info("Dry run, skip the actual action")
         return
     pdf_data = confluence.export_page(page.page_id)
     graph.upload_file(page, pdf_data)
@@ -77,18 +150,69 @@ def export_page(page_id):
     )
 
 
-def get_hub_account_folder(htmlBody):
+def __find_all_details_macros(htmlBody):
+    soup = BeautifulSoup(htmlBody, "html.parser")
+    return soup.find_all("ac:structured-macro", {"ac:name": "details"})
+
+
+def __find_field_td(htmlBody, keyName):
+    try:
+        for details_macro in __find_all_details_macros(htmlBody):
+            try:
+                account_id_text = details_macro.find(string=keyName)
+                tr = account_id_text.find_parent("tr")
+                td = tr.find("td")
+                return td
+            except:
+                continue
+    except:
+        pass
+
+
+def __find_field_href(htmlBody, keyName):
+    for details_macro in __find_all_details_macros(htmlBody):
+        try:
+            account_id_text = details_macro.find(string=keyName)
+            tr = account_id_text.find_parent("tr")
+            link = tr.find("td").find("a")
+            href = link["href"]
+            return href
+        except:
+            continue
+
+
+def __get_account_folder_by_details(htmlBody):
     hub_folder_url = None
     try:
-        soup = BeautifulSoup(htmlBody, "html.parser")
-        details_macro = soup.find("ac:structured-macro", {"ac:name": "details"})
-        hub_account_folder_text = details_macro.find(string="Hub Account Folder")
-        tr = hub_account_folder_text.find_parent("tr")
-        hub_folder_link = tr.find("a")
-        hub_folder_url = hub_folder_link["href"]
+        hub_folder_url = __find_field_href(htmlBody, "Hub Account Folder")
     except:
         pass
     return hub_folder_url
+
+
+OPPORTUNITY_ID_RE = re.compile("Opportunity/([^/]+)/view")
+ACCOUNT_ID_RE = re.compile("/([^/]+)/view")
+ACCOUNT_ID_RE2 = re.compile("/([^/]+)/$")
+
+
+def __get_account_id(htmlBody):
+    account_id = None
+    try:
+        account_link = __find_field_href(htmlBody, "SalesForce Account Link")
+        # https://solacecorp.lightning.force.com/lightning/r/Account/00130000005pUpkAAE/view
+        if m := OPPORTUNITY_ID_RE.search(account_link):
+            logging.error(
+                f"Could not parse account id from the opportunity link {account_link}"
+            )
+        elif m := ACCOUNT_ID_RE.search(account_link):
+            account_id = m.group(1)
+        elif m := ACCOUNT_ID_RE2.search(account_link):
+            account_id = m.group(1)
+        else:
+            logging.error(f"Could not parse account id from {account_link}")
+    except:
+        pass
+    return account_id
 
 
 SHAREPOINT_DOMAIN = "solacesystems"

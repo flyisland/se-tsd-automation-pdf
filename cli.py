@@ -48,6 +48,11 @@ import logging
     is_flag=True,
     help="Perform the automation on all pages",
 )
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="With this flag, only print the actions that would be performed",
+)
 @click.option("--debug", help="Enable debug logging", is_flag=True)
 def main(**kwargs):
     logging.basicConfig(

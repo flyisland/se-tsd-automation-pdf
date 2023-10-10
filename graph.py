@@ -9,7 +9,7 @@ from msal import ConfidentialClientApplication
 import model
 
 session = None
-graph_url = "https://graph.microsoft.com/v1.0/"
+graph_url = "https://graph.microsoft.com/v1.0"
 site_id = "f00780b3-f81c-4c7e-9526-445daa3cb7af"  # SFDCAccounts
 
 
@@ -35,10 +35,32 @@ def init(opts):
     logging.info("Connected to Azure " + graph_url)
 
 
-def get_item_id_by_path(page: model.Page) -> None:
+def api_call(url, method="GET", data=None):
+    response = session.request(method, graph_url + url, data=data)
+    if response.status_code != 200:
+        logging.error(f"Failed to {method} {url}\n{response.text}")
+    return response.json()
+
+
+def get_account_folder_by_id(account_id: str) -> str:
+    list_id = "361fab66-4975-45b7-b2d4-f655eee1ae75"
+    respJson = api_call(
+        f"/sites/{site_id}/lists/{list_id}/items?$filter=fields/AccountId eq '{account_id}'"
+    )
+    logging.debug(json.dumps(respJson, indent=2))
+    if len(respJson.get("value")) == 0:
+        logging.error(f"No account folder found with id {account_id}")
+    else:
+        return respJson.get("value")[0].get("webUrl")
+
+
+def setup_tsd_info(page: model.Page) -> None:
     """
     Get the id of an item by path, make sure it's a folder.
     """
+    if not page.tsd_folder_path:
+        # No folder path
+        return
     url = f"/sites/{site_id}/drive/root:/{urllib.parse.quote(page.tsd_folder_path)}"
     full_url = graph_url + url
     response = session.get(full_url)
