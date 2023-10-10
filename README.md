@@ -34,4 +34,4 @@ jobs: https://sqs.us-east-1.amazonaws.com/231935536054/se-tsd-automation-prod-jo
 
 ```
 
-Then update the `trigger.jsx` file of the [se-tsd-automation](https://github.com/solacese/se-tsd-automation) with the `lambdaUrl` set to the endpoint of the Lambda function.
+Then update the `trigger.jsx` file of the [se-oppts-automation](https://github.com/solacese/se-oppts-automation) with the `lambdaUrl` set to the endpoint of the Lambda function.
