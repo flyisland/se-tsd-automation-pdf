@@ -155,25 +155,11 @@ def __find_all_details_macros(htmlBody):
     return soup.find_all("ac:structured-macro", {"ac:name": "details"})
 
 
-def __find_field_td(htmlBody, keyName):
-    try:
-        for details_macro in __find_all_details_macros(htmlBody):
-            try:
-                account_id_text = details_macro.find(string=keyName)
-                tr = account_id_text.find_parent("tr")
-                td = tr.find("td")
-                return td
-            except:
-                continue
-    except:
-        pass
-
-
 def __find_field_href(htmlBody, keyName):
     for details_macro in __find_all_details_macros(htmlBody):
         try:
-            account_id_text = details_macro.find(string=keyName)
-            tr = account_id_text.find_parent("tr")
+            key_text = details_macro.find(string=re.compile(keyName))
+            tr = key_text.find_parent("tr")
             link = tr.find("td").find("a")
             href = link["href"]
             return href
@@ -198,7 +184,7 @@ ACCOUNT_ID_RE2 = re.compile("/([^/]+)/$")
 def __get_account_id(htmlBody):
     account_id = None
     try:
-        account_link = __find_field_href(htmlBody, "SalesForce Account Link")
+        account_link = __find_field_href(htmlBody, "SalesForce Account")
         # https://solacecorp.lightning.force.com/lightning/r/Account/00130000005pUpkAAE/view
         if m := OPPORTUNITY_ID_RE.search(account_link):
             logging.error(
